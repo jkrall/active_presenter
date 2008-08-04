@@ -1,3 +1,4 @@
+require "set"
 module ActivePresenter
   # Base class for presenters. See README for usage.
   #
@@ -9,7 +10,7 @@ module ActivePresenter
     # i.e.
     #
     #   class SignupPresenter < ActivePresenter::Base
-    #     presents User, Account
+    #     presents :user, :account
     #   end
     #
     #
@@ -21,7 +22,7 @@ module ActivePresenter
           send(t).errors
         end
         
-        presented[t] = t.to_s.classify.constantize
+        presented[t] = t.to_s.classify_without_singularize.constantize
       end
     end
     
@@ -53,12 +54,15 @@ module ActivePresenter
       end
       
       self.attributes = args
+      @new_record = true
     end
     
     # Set the attributes of the presentable instances using the type_attribute form (i.e. user_login => 'james')
     #
     def attributes=(attrs)
-      attrs.each { |k,v| send("#{k}=", v) unless attribute_protected?(k)}
+      attrs.each do |k,v| 
+        send("#{k}=", v) unless attribute_protected?(k)
+      end
     end
     
     # Makes sure that the presenter is accurate about responding to presentable's attributes, even though they are handled by method_missing.
@@ -105,6 +109,7 @@ module ActivePresenter
         end
       end
       
+      @new_record = !saved
       saved
     end
     
@@ -128,45 +133,68 @@ module ActivePresenter
       save
     end
     
-    protected
-      def presented_instances
-        presented.keys.map { |key| send(key) }
-      end
-      
-      def delegate_message(method_name, *args, &block)
-        presentable = presentable_for(method_name)
-        send(presentable).send(flatten_attribute_name(method_name, presentable), *args, &block)
-      end
-      
-      def presentable_for(method_name)
-        presented.keys.detect do |type|
-          method_name.to_s.starts_with?(attribute_prefix(type))
-        end
-      end
+    # The new record status, which we keep around in @new_record... similar to ActiveRecord
+    # 
+    # Returns true or false based on saved status
+    #
+    def new_record?
+      @new_record
+    end
+    def new_record=(n)
+      @new_record = (n==true)
+    end
     
-      def presented_attribute?(method_name)
-        p = presentable_for(method_name)
-        !p.nil? && send(p).respond_to?(flatten_attribute_name(method_name,p))
+    # Handle destroy of delegated objects
+    #
+    #
+    def destroy
+      presented.keys.each do |type|
+        presented_inst = send(type)
+        presented_inst.destroy
+        presented_inst = nil
       end
-      
-      def flatten_attribute_name(name, type)
-        name.to_s.gsub(/^#{attribute_prefix(type)}/, '')
+    end
+    
+    protected
+    
+    def presented_instances
+      presented.keys.map { |key| send(key) }
+    end
+    
+    def delegate_message(method_name, *args, &block)
+      presentable = presentable_for(method_name)
+      send(presentable).send(flatten_attribute_name(method_name, presentable), *args, &block)
+    end
+    
+    def presentable_for(method_name)
+      presented.keys.detect do |type|
+        method_name.to_s.starts_with?(attribute_prefix(type))
       end
-      
-      def attribute_prefix(type)
+    end
+    
+    def presented_attribute?(method_name)
+      p = presentable_for(method_name)
+      !p.nil? && send(p).respond_to?(flatten_attribute_name(method_name,p))
+    end
+    
+    def flatten_attribute_name(name, type)
+      name.to_s.gsub(/^#{attribute_prefix(type)}/, '')
+    end
+    
+    def attribute_prefix(type)
         "#{type}_"
+    end
+    
+    def merge_errors(presented_inst, type)
+      presented_inst.errors.each do |att,msg|
+        errors.add(attribute_prefix(type)+att, msg)
       end
-      
-      def merge_errors(presented_inst, type)
-        presented_inst.errors.each do |att,msg|
-          errors.add(attribute_prefix(type)+att, msg)
-        end
-      end
-      
-      def attribute_protected?(name)
-        presentable    = presentable_for(name)
-        flat_attribute = {flatten_attribute_name(name, presentable) => ''} #remove_att... normally takes a hash, so we use a ''
-        presentable.to_s.classify.constantize.new.send(:remove_attributes_protected_from_mass_assignment, flat_attribute).empty?
-      end
+    end
+    
+    def attribute_protected?(name)
+      presentable    = presentable_for(name)
+      flat_attribute = {flatten_attribute_name(name, presentable) => ''} #remove_att... normally takes a hash, so we use a ''
+      presentable.to_s.classify_without_singularize.constantize.new.send(:remove_attributes_protected_from_mass_assignment, flat_attribute).empty?
+    end
   end
 end
