@@ -10,19 +10,32 @@ module ActivePresenter
     # i.e.
     #
     #   class SignupPresenter < ActivePresenter::Base
-    #     presents :user, :account
+    #     presents :user, :account, {:class=>:moderator, :namespace=>:admin}
     #   end
-    #
+    # 
     #
     def self.presents(*types)
-      attr_accessor *types
-      
+      typeshash = {}
       types.each do |t|
+        if t.is_a?(Hash)
+          typeshash[t[:class]] = t[:namespace]
+        else
+          typeshash[t] = nil
+        end
+      end
+
+      attr_accessor *(typeshash.keys)
+      
+      typeshash.each do |t,n|
         define_method("#{t}_errors") do
           send(t).errors
         end
         
-        presented[t] = t.to_s.classify_without_singularize.constantize
+        if n.nil?
+          presented[t] = t.to_s.classify_without_singularize.constantize                    
+        else  
+          presented[t] = (n.to_s.classify_without_singularize+'::'+t.to_s.classify_without_singularize).constantize
+        end
       end
     end
     
@@ -88,7 +101,6 @@ module ActivePresenter
     def valid?
       presented.keys.each do |type|
         presented_inst = send(type)
-        
         merge_errors(presented_inst, type) unless presented_inst.valid?
       end
       
