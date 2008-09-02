@@ -210,7 +210,7 @@ module ActivePresenter
         p "Problem: #{name}"
         return true
       end
-      presentable.to_s.classify_without_singularize.constantize.new.send(:remove_attributes_protected_from_mass_assignment, flat_attribute).empty?
+      presented[presentable].new.send(:remove_attributes_protected_from_mass_assignment, flat_attribute).empty?
     end
   end
 end
